@@ -4,7 +4,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import request from 'supertest';
 import { INestApplication } from '@nestjs/common';
-import { EscrowResolver, MilestoneResolver, DeliverableResolver } from './escrow.resolver';
+import { EscrowResolver, MilestoneResolver, DeliverableResolver, EscrowPage } from './escrow.resolver';
 import { EscrowType } from './types/escrow.type';
 import { MilestoneType } from './types/milestone.type';
 import { DeliverableType } from './types/deliverable.type';
@@ -57,6 +57,7 @@ describe('EscrowGraphQL Integration', () => {
         EscrowResolver,
         MilestoneResolver,
         DeliverableResolver,
+        EscrowPage,
         { provide: EscrowService, useValue: mockEscrowService },
         { provide: MilestoneLoader, useValue: mockMilestoneLoader },
         { provide: DeliverableLoader, useValue: mockDeliverableLoader },
@@ -80,18 +81,19 @@ describe('EscrowGraphQL Integration', () => {
   // ─── escrows query ─────────────────────────────────────────────────────────
 
   describe('escrows query', () => {
-    it('returns an empty array when no escrows exist', async () => {
+    it('returns an empty page when no escrows exist', async () => {
       mockEscrowService.findAll.mockResolvedValue([]);
 
       const res = await request(app.getHttpServer())
         .post('/graphql')
-        .send({ query: `{ escrows { id status } }` });
+        .send({ query: `{ escrows { data { id status } total offset limit } }` });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.escrows).toEqual([]);
+      expect(res.body.data.escrows.data).toEqual([]);
+      expect(res.body.data.escrows.total).toBe(0);
     });
 
-    it('returns escrows with scalar fields', async () => {
+    it('returns escrows with scalar fields and pagination metadata', async () => {
       const escrows = [
         {
           id: 'esc-1',
@@ -114,12 +116,33 @@ describe('EscrowGraphQL Integration', () => {
 
       const res = await request(app.getHttpServer())
         .post('/graphql')
-        .send({ query: `{ escrows { id depositor beneficiary amountXLM status createdAt } }` });
+        .send({ query: `{ escrows { data { id depositor beneficiary amountXLM status createdAt } total offset limit } }` });
 
       expect(res.status).toBe(200);
-      expect(res.body.data.escrows).toHaveLength(2);
-      expect(res.body.data.escrows[0].id).toBe('esc-1');
-      expect(res.body.data.escrows[1].status).toBe('pending');
+      expect(res.body.data.escrows.data).toHaveLength(2);
+      expect(res.body.data.escrows.data[0].id).toBe('esc-1');
+      expect(res.body.data.escrows.data[1].status).toBe('pending');
+      expect(res.body.data.escrows.total).toBe(2);
+    });
+
+    it('respects offset and limit args', async () => {
+      const escrows = [
+        { id: 'esc-1', depositor: 'GABC', beneficiary: 'GDEF', amountXLM: '100', status: 'active', createdAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'esc-2', depositor: 'GGHI', beneficiary: 'GJKL', amountXLM: '200', status: 'pending', createdAt: '2026-01-02T00:00:00.000Z' },
+        { id: 'esc-3', depositor: 'GMNO', beneficiary: 'GPQR', amountXLM: '300', status: 'released', createdAt: '2026-01-03T00:00:00.000Z' },
+      ];
+      mockEscrowService.findAll.mockResolvedValue(escrows);
+
+      const res = await request(app.getHttpServer())
+        .post('/graphql')
+        .send({ query: `{ escrows(offset: 1, limit: 1) { data { id } total offset limit } }` });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.escrows.data).toHaveLength(1);
+      expect(res.body.data.escrows.data[0].id).toBe('esc-2');
+      expect(res.body.data.escrows.total).toBe(3);
+      expect(res.body.data.escrows.offset).toBe(1);
+      expect(res.body.data.escrows.limit).toBe(1);
     });
   });
 
@@ -291,7 +314,7 @@ describe('EscrowGraphQL Integration', () => {
 
       const res = await request(app.getHttpServer())
         .post('/graphql')
-        .send({ query: `{ escrows { id milestones { id } } }` });
+        .send({ query: `{ escrows { data { id milestones { id } } } }` });
 
       expect(res.status).toBe(200);
       // DataLoader should have been called once per unique escrow ID

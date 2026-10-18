@@ -1,4 +1,4 @@
-import { Resolver, Query, Args, ResolveField, Parent } from '@nestjs/graphql';
+import { Resolver, Query, Args, ResolveField, Parent, Int, ObjectType, Field } from '@nestjs/graphql';
 import { EscrowType } from './types/escrow.type';
 import { MilestoneType } from './types/milestone.type';
 import { DeliverableType } from './types/deliverable.type';
@@ -11,6 +11,21 @@ import { JurorVoteLoader } from './dataloader/juror-vote.loader';
 import { UserProfileLoader } from './dataloader/user-profile.loader';
 import { Inject } from '@nestjs/common';
 
+@ObjectType()
+export class EscrowPage {
+  @Field(() => [EscrowType])
+  data!: EscrowType[];
+
+  @Field(() => Int)
+  total!: number;
+
+  @Field(() => Int)
+  offset!: number;
+
+  @Field(() => Int)
+  limit!: number;
+}
+
 @Resolver(() => EscrowType)
 export class EscrowResolver {
   constructor(
@@ -21,9 +36,21 @@ export class EscrowResolver {
     @Inject(UserProfileLoader) private readonly userProfileLoader: UserProfileLoader,
   ) {}
 
-  @Query(() => [EscrowType])
-  async escrows(): Promise<EscrowType[]> {
-    return this.escrowService.findAll() as unknown as EscrowType[];
+  @Query(() => EscrowPage)
+  async escrows(
+    @Args('offset', { type: () => Int, nullable: true, defaultValue: 0 }) offset: number,
+    @Args('limit', { type: () => Int, nullable: true, defaultValue: 20 }) limit: number,
+  ): Promise<EscrowPage> {
+    const safeOffset = Math.max(0, offset);
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+    const all = await this.escrowService.findAll();
+    const data = all.slice(safeOffset, safeOffset + safeLimit);
+    return {
+      data: data as unknown as EscrowType[],
+      total: all.length,
+      offset: safeOffset,
+      limit: safeLimit,
+    };
   }
 
   @Query(() => EscrowType, { nullable: true })

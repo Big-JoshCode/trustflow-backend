@@ -88,11 +88,34 @@ export class ArweaveArchiveService implements OnModuleInit {
         ['Step', saga.currentStep],
       ];
 
+      let uploadData = jsonString;
       if (jsonString.length > MAX_JSON_SIZE) {
-        this.logger.warn(`Archive data exceeds ${MAX_JSON_SIZE / 1024}KB, truncating for Arweave bundle`);
+        this.logger.warn(
+          `Archive data exceeds ${MAX_JSON_SIZE / 1024}KB, truncating votes and stepHistory for Arweave bundle`,
+        );
+        const truncated = {
+          ...archiveData,
+          votes: (archiveData.votes as unknown[]).slice(0, 10),
+          stepHistory: (archiveData.stepHistory as unknown[]).slice(0, 20),
+          _truncated: true,
+        };
+        uploadData = JSON.stringify(truncated);
+        if (uploadData.length > MAX_JSON_SIZE) {
+          uploadData = JSON.stringify({
+            sagaId: archiveData.sagaId,
+            escrowId: archiveData.escrowId,
+            initiator: archiveData.initiator,
+            verdict: archiveData.verdict,
+            currentStep: archiveData.currentStep,
+            createdAt: archiveData.createdAt,
+            completedAt: archiveData.completedAt,
+            _truncated: true,
+            _reason: 'archive exceeded max size after initial truncation',
+          });
+        }
       }
 
-      const txId = await this.uploader.upload(jsonString, tags);
+      const txId = await this.uploader.upload(uploadData, tags);
 
       this.metrics?.increment('arweave_archive_success_total', { result: 'success' });
       this.logger.log(`Arweave archive uploaded for saga ${saga.sagaId}, txId: ${txId}`);

@@ -64,19 +64,8 @@ export class EscrowReconciliationService {
     const drifts: DriftRecord[] = [];
     const errors: ReconciliationError[] = [];
 
-    // Use cursor-based pagination to load escrows in batches instead of loading all at once
-    const BATCH_SIZE = 50;
-    const linked: Escrow[] = [];
-    let offset = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      const batch = await this.escrowService.findAll();
-      const batchLinked = batch.slice(offset, offset + BATCH_SIZE).filter(e => e.contractEscrowId);
-      linked.push(...batchLinked);
-      offset += BATCH_SIZE;
-      hasMore = offset < batch.length;
-    }
+    const all = await this.escrowService.findAll();
+    const linked = all.filter(e => e.contractEscrowId);
 
     const knownIds = new Set(linked.map(e => e.contractEscrowId as string));
 
